@@ -30,3 +30,5 @@ hosting = "github"
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Allow running modified CI to install musl deps
+allow-dirty = ["ci"]
