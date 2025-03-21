@@ -2,5 +2,6 @@
   if: "contains(join(matrix.targets, ' '), 'musl')"
   run: |
     sudo apt-get update
-    sudo apt-get install -y musl musl-dev musl-tools clang
+    sudo apt-get install -y musl musl-dev musl-tools g++-multilib
     sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
+    echo "LDFLAGS=-static" >> $GITHUB_ENV
