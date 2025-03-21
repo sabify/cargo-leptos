@@ -129,9 +129,11 @@ jobs:
         if: "contains(join(matrix.targets, ' '), 'musl')"
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl musl-dev musl-tools g++-multilib
+          sudo apt-get install -y musl musl-dev musl-tools g++-multilib libssl-dev pkg-config
           sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
           echo "LDFLAGS=-static" >> $GITHUB_ENV
+          echo "RUSTC_LINKER=rust-lld" >> $GITHUB_ENV
+          echo "RUSTFLAGS=-C target-feature=+crt-static" >> $GITHUB_ENV
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
       # Get the dist-manifest
