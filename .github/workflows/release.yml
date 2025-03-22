@@ -128,16 +128,17 @@ jobs:
       - name: "Install MUSL tools and configure environment"
         if: "contains(join(matrix.targets, ' '), 'musl')"
         run: |
+          set -xe
           sudo apt-get update
           sudo apt-get install -y musl musl-dev musl-tools libssl-dev pkg-config
           sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
-          [ -d "/usr/include/musl" ] || exit 1
-          [ -d "/usr/lib/musl" ] || exit 1
+          [ -d "/usr/include/x86_64-linux-musl" ] || exit 1
+          [ -d "/usr/lib/x86_64-linux-musl" ] || exit 1
           echo "LDFLAGS=-static" >> $GITHUB_ENV
-          echo "RUSTC_LINKER=musl-gcc" >> $GITHUB_ENV
+          echo "RUSTC_LINKER=musl-ldd" >> $GITHUB_ENV
           echo "RUSTFLAGS=-C target-feature=+crt-static" >> $GITHUB_ENV
-          echo "CFLAGS=-I/usr/include/musl $CFLAGS\ -O2 -static" >> $GITHUB_ENV
-          echo "CXXFLAGS=-I/usr/include/musl $CFLAGS\ -O2 -static" >> $GITHUB_ENV
+          echo "CFLAGS=-I/usr/include/x86_64-linux-musl $CFLAGS\ -O2 -static" >> $GITHUB_ENV
+          echo "CXXFLAGS=-I/usr/include/x86_64-linux-musl $CFLAGS\ -O2 -static" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=/usr/lib/musl:$LD_LIBRARY_PATH" >> $GITHUB_ENV
           # echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> $GITHUB_ENV
           # echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS=-C target-feature=+crt-static" >> $GITHUB_ENV
