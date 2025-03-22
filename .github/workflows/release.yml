@@ -131,10 +131,10 @@ jobs:
           set -xe
           sudo apt-get update
           sudo apt-get install -y musl musl-dev musl-tools build-essential
-          sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
+          sudo ln -s /usr/bin/musl-gcc /usr/bin/musl-g++
           echo "LDFLAGS=-static $LDFLAGS" >> $GITHUB_ENV
           echo "CFLAGS=-I/usr/include/x86_64-linux-musl $CFLAGS -O2 -static" >> $GITHUB_ENV
-          echo "CXXFLAGS=-I/usr/include/x86_64-linux-musl $CFLAGS -O2 -static" >> $GITHUB_ENV
+          echo "CXXFLAGS=-I/usr/include/x86_64-linux-musl $CXXFLAGS -O2 -static" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=/usr/lib/x86_64-linux-musl:$LD_LIBRARY_PATH" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-musl/pkgconfig" >> $GITHUB_ENV
       - name: Install dist
