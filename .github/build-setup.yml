@@ -7,9 +7,9 @@
     wget https://apt.llvm.org/llvm.sh
     sudo chmod +x llvm.sh
     sudo ./llvm.sh 20
-    ln -sf /usr/bin/clang-20 /usr/bin/clang
-    ln -sf /usr/bin/clang++-20 /usr/bin/clang++
-    ln -sf /usr/bin/lld-20 /usr/bin/lld
+    sudo ln -sf /usr/bin/clang-20 /usr/bin/clang
+    sudo ln -sf /usr/bin/clang++-20 /usr/bin/clang++
+    sudo ln -sf /usr/bin/lld-20 /usr/bin/lld
 
     clang --version
 
