@@ -25,4 +25,3 @@ install-path = "CARGO_HOME"
 install-updater = false
 # Add custom build setup steps
 github-build-setup = "../build-setup.yml"
-allow-dirty = ["ci"]

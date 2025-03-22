@@ -12,9 +12,11 @@
 #
 # Note that the GitHub Release will be created with a generated
 # title/body based on your changelogs.
+
 name: Release
 permissions:
   "contents": "write"
+
 # This task will run whenever you push a git tag that looks like a version
 # like "1.0.0", "v0.1.0-prerelease.1", "my-app/0.1.0", "releases/v1.0.0", etc.
 # Various formats will be parsed into a VERSION and an optional PACKAGE_NAME, where
@@ -37,11 +39,11 @@ permissions:
 # If there's a prerelease-style suffix to the version, then the release(s)
 # will be marked as a prerelease.
 on:
-  workflow_dispatch:
   pull_request:
   push:
     tags:
       - '**[0-9]+.[0-9]+.[0-9]+*'
+
 jobs:
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
@@ -83,6 +85,7 @@ jobs:
         with:
           name: artifacts-plan-dist-manifest
           path: plan-dist-manifest.json
+
   # Build and packages all the platform-specific things
   build-local-artifacts:
     name: build-local-artifacts (${{ join(matrix.targets, ', ') }})
@@ -134,10 +137,9 @@ jobs:
           echo "CC=musl-gcc" >> $GITHUB_ENV
           echo "CXX=musl-gcc" >> $GITHUB_ENV
           echo "LDFLAGS=-static" >> $GITHUB_ENV
-          echo "RUSTC_LINKER=musl-ldd" >> $GITHUB_ENV
-          echo "RUSTFLAGS=-C target-feature=+crt-static" >> $GITHUB_ENV
+          echo "RUSTC_LINKER=musl-gcc" >> $GITHUB_ENV
           echo "CFLAGS=-I/usr/include/x86_64-linux-musl $CFLAGS\ -O2 -static" >> $GITHUB_ENV
-          echo "CXXFLAGS=-I/usr/include/x86_64-linux-musl $CFLAGS\ -O2 -static" >> $GITHUB_ENV
+          echo "CXXFLAGS=-I/usr/include/x87_64-linux-musl $CFLAGS\ -O2 -static" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=/usr/lib/x86_64-linux-musl:$LD_LIBRARY_PATH" >> $GITHUB_ENV
           # echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> $GITHUB_ENV
           # echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS=-C target-feature=+crt-static" >> $GITHUB_ENV
@@ -179,6 +181,7 @@ jobs:
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
+
   # Build and package all the platform-agnostic(ish) things
   build-global-artifacts:
     needs:
@@ -289,6 +292,7 @@ jobs:
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
 
           gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
+
   announce:
     needs:
       - plan
