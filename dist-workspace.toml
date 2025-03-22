@@ -26,4 +26,4 @@ install-updater = false
 # Add custom build setup steps
 # github-build-setup = "../build-setup.yml"
 [dist.github-custom-runners]
-x86_64-unknown-linux-musl.container = "messense/rust-musl-cross"
+x86_64-unknown-linux-musl.container = "messense/rust-musl-cross:x86_64-musl"
