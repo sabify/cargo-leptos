@@ -3,7 +3,16 @@
   run: |
     set -xe
     sudo apt-get update
-    sudo apt-get install -y build-essential curl musl-tools clang llvm
+    sudo apt-get install -y build-essential curl musl-tools musl-dev
+    wget https://apt.llvm.org/llvm.sh
+    sudo chmod +x llvm.sh
+    sudo ./llvm.sh 20
+    ln -sf /usr/bin/clang-20 /usr/bin/clang
+    ln -sf /usr/bin/clang++-20 /usr/bin/clang++
+    ln -sf /usr/bin/lld-20 /usr/bin/lld
+
+    clang --version
+
     echo "CC_x86_64_unknown_linux_musl=clang" >> $GITHUB_ENV
     echo "CXX_x86_64_unknown_linux_musl=clang++" >> $GITHUB_ENV
     echo "AR_x86_64_unknown_linux_musl=llvm-ar" >> $GITHUB_ENV
