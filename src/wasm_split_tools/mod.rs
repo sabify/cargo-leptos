@@ -23,7 +23,11 @@ pub async fn wasm_split(
         opts.output_dir = dest_dir.as_std_path();
         opts.main_out_path = main_out_file.as_std_path();
         opts.main_module = main_module;
-        opts.link_name = "./__wasm_split.______________________.js";
+        // Use a stable, un-hashed specifier here. The main JS/WASM embed this
+        // name as their import path; we keep it constant so it never needs to be
+        // patched. After hashing, a small shim is emitted at this path that
+        // re-exports the content-hashed loader (see `add_hashes_to_site`).
+        opts.link_name = "./__wasm_split.js";
         opts.verbose = verbose;
         opts
     })?;

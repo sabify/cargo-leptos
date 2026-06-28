@@ -1,6 +1,6 @@
 use crate::{
     config::Project,
-    ext::{eyre::CustomWrapErr, PathBufExt},
+    ext::eyre::CustomWrapErr,
     internal_prelude::*,
 };
 use base64ct::{Base64UrlUnpadded, Encoding};
@@ -26,49 +26,40 @@ pub fn add_hashes_to_site(proj: &Project) -> Result<()> {
     );
 
     let wasm_split_hash = if proj.split {
-        let old_wasm_split = proj
-            .lib
-            .js_file
-            .dest
-            .clone()
-            .without_last()
-            .join("__wasm_split.______________________.js");
-        let new_wasm_split = &renamed_files[&old_wasm_split];
-        replace_in_file(new_wasm_split, &renamed_files, &pkg_dir, false);
+        // The loader is emitted at a stable `__wasm_split.js` name (see
+        // `wasm_split_tools`). Rewrite the chunk / split / main-module references
+        // inside it to their hashed names *first*, then hash the final bytes so
+        // the loader's cache key actually tracks the chunks it loads.
+        let loader = pkg_dir.join("__wasm_split.js");
+        replace_in_file(&loader, &renamed_files, &pkg_dir, false);
 
-        let old_wasm_split_filename = old_wasm_split.file_name().unwrap();
-        let new_wasm_split_filename = new_wasm_split.file_name().unwrap();
+        let hash = Base64UrlUnpadded::encode_string(
+            &Md5::new().chain_update(fs::read(&loader)?).finalize(),
+        );
+        let hashed_loader = pkg_dir.join(format!("__wasm_split.{hash}.js"));
+        fs::rename(&loader, &hashed_loader)
+            .wrap_err_with(|| format!("Failed to rename {loader} to {hashed_loader}"))?;
 
-        for entry in fs::read_dir(&pkg_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
-                if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
-                    if filename.ends_with(".wasm") {
-                        replace_in_binary_file(
-                            &Utf8PathBuf::try_from(path).unwrap(),
-                            old_wasm_split_filename,
-                            new_wasm_split_filename,
-                        );
-                    } else if filename.starts_with("__wasm_split_manifest") {
-                        replace_in_file(
-                            &Utf8PathBuf::try_from(path).unwrap(),
-                            &renamed_files,
-                            &pkg_dir,
-                            true,
-                        );
-                    } else if filename.starts_with("__wasm_split") {
-                        replace_in_file(
-                            &Utf8PathBuf::try_from(path).unwrap(),
-                            &renamed_files,
-                            &pkg_dir,
-                            false,
-                        );
-                    }
-                }
-            }
+        // The main JS/WASM import the stable `./__wasm_split.js` specifier, which
+        // is never hashed. Emit a tiny shim there that re-exports the
+        // content-hashed loader: the shim is the only artifact that must be
+        // revalidated, while the real loader (and the chunks) stay immutable.
+        fs::write(
+            &loader,
+            format!("export * from \"./__wasm_split.{hash}.js\";\n"),
+        )
+        .wrap_err_with(|| format!("Failed to write wasm-split shim to {loader}"))?;
+
+        // The prefetch manifest references chunks by their pre-hash names
+        // (without extension); rewrite those to match the renamed chunk files.
+        if let Some(manifest) = renamed_files.values().find(|p| {
+            p.file_name()
+                .is_some_and(|f| f.starts_with("__wasm_split_manifest"))
+        }) {
+            replace_in_file(manifest, &renamed_files, &pkg_dir, true);
         }
-        Some(&files_to_hashes[&old_wasm_split])
+
+        Some(hash)
     } else {
         None
     };
@@ -148,6 +139,14 @@ fn compute_front_file_hashes(proj: &Project) -> Result<HashMap<Utf8PathBuf, Stri
                         if path_str.contains("snippets") && path.is_file(){
                             continue;
                         }
+                    }
+
+                    // The wasm-split loader keeps a stable, un-hashed name so the
+                    // main JS/WASM can import it without their bytes being patched.
+                    // It is hashed and shimmed separately in `add_hashes_to_site`.
+                    if path.file_name().and_then(|f| f.to_str()) == Some("__wasm_split.js")
+                    {
+                        continue;
                     }
 
                     let hash = Base64UrlUnpadded::encode_string(
@@ -237,22 +236,6 @@ fn replace_in_file(
             contents = contents.replace(old_path, new_path);
         } else {
             contents = contents.replace(old_path.as_str(), new_path.as_str());
-        }
-    }
-
-    fs::write(path, contents).expect("could not write file");
-}
-
-fn replace_in_binary_file(path: &Utf8PathBuf, old_wasm_split: &str, new_wasm_split: &str) {
-    let mut contents =
-        fs::read(path).unwrap_or_else(|e| panic!("error {e}: could not read file {path}"));
-
-    let old_path = old_wasm_split.as_bytes();
-    let new_path = new_wasm_split.as_bytes();
-
-    for i in 0..=contents.len() - old_path.len() {
-        if contents[i..].starts_with(old_path) {
-            contents[i..(i + old_path.len())].clone_from_slice(new_path);
         }
     }
 
