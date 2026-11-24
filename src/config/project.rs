@@ -26,6 +26,7 @@ pub(super) const CARGO_BUILD_TARGET_DIR_MARKER: &str = "CARGO_BUILD_TARGET_DIR";
 const DEFAULT_GRACEFUL_SHUTDOWN: bool = true;
 const DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT_SECS: u64 = 10;
 const DEFAULT_GRACEFUL_SHUTDOWN_UNIX_SIGNAL: UnixSignal = UnixSignal::Sigint;
+const DEFAULT_PKG_DIR: &str = "pkg";
 
 #[derive(Debug, Clone, Copy)]
 pub struct ShutdownPolicy {
@@ -545,6 +546,9 @@ impl ProjectConfig {
             warn!("Deprecated: the `separate-front-target-dir` option is deprecated since cargo-leptos 0.2.3");
             warn!("It is now unconditionally enabled; you can remove it from your Cargo.toml")
         }
+        if let Some(message) = site_pkg_dir_deprecation(&self.site_pkg_dir) {
+            warn!("{message}");
+        }
 
         Ok(())
     }
@@ -705,7 +709,14 @@ fn default_site_addr() -> SocketAddr {
 }
 
 fn default_pkg_dir() -> Utf8PathBuf {
-    Utf8PathBuf::from("pkg")
+    Utf8PathBuf::from(DEFAULT_PKG_DIR)
+}
+
+fn site_pkg_dir_deprecation(pkg_dir: &Utf8Path) -> Option<&'static str> {
+    (pkg_dir.as_str() != DEFAULT_PKG_DIR).then_some(
+        "`site-pkg-dir` (`LEPTOS_SITE_PKG_DIR`) is deprecated for Leptos 0.9 and newer. \
+         Use `site-pkg-root` and `site-pkg-url` instead.",
+    )
 }
 
 fn default_site_root() -> Utf8PathBuf {
@@ -820,5 +831,14 @@ mod tests {
             optional_site_envs(&site).collect::<Vec<_>>(),
             [("LEPTOS_SITE_ROOT_URL", "/static/".to_owned())]
         );
+    }
+
+    #[test]
+    fn warns_for_custom_pkg_dirs() {
+        assert_eq!(site_pkg_dir_deprecation(&default_pkg_dir()), None);
+        let message = site_pkg_dir_deprecation(Utf8Path::new("custom")).unwrap();
+        for part in ["Leptos 0.9 and newer", "site-pkg-root", "site-pkg-url"] {
+            assert!(message.contains(part), "{message}");
+        }
     }
 }

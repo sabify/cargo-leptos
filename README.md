@@ -289,6 +289,7 @@ site-root = "target/site"
 site-root-url = "/"
 
 # The site-root relative folder where all compiled output (JS, WASM and CSS) is written.
+# Deprecated for Leptos 0.9 and newer. Use site-pkg-root and site-pkg-url.
 #
 # Optional, defaults to "pkg". Env: LEPTOS_SITE_PKG_DIR.
 site-pkg-dir = "pkg"
