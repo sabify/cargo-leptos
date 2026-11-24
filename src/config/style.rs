@@ -16,24 +16,14 @@ pub struct StyleConfig {
 
 impl StyleConfig {
     pub fn new(config: &ProjectConfig) -> Result<Self> {
-        let site_rel = config
-            .site_pkg_dir
-            .join(&config.output_name)
-            .with_extension("css");
-
-        let site_file = SiteFile {
-            dest: config.site_root.join(&site_rel),
-            site: site_rel,
-        };
+        let site_file = config.pkg_file(&config.output_name, "css");
         let style_file = config.style_file.as_ref().map(|file| {
             // relative to the configuration file
-            let source = config.config_dir.join(file);
-            let site = config
-                .site_pkg_dir
-                .join(&config.output_name)
-                .with_extension("css");
-            let dest = config.site_root.join(&site);
-            SourcedSiteFile { source, dest, site }
+            SourcedSiteFile {
+                source: config.config_dir.join(file),
+                dest: site_file.dest.clone(),
+                site: site_file.site.clone(),
+            }
         });
         Ok(Self {
             file: style_file,

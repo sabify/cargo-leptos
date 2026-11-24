@@ -4,7 +4,7 @@ use std::{
     net::SocketAddr,
 };
 
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use tokio::sync::RwLock;
 
 use crate::internal_prelude::*;
@@ -77,6 +77,7 @@ pub struct Site {
     pub root_dir: Utf8PathBuf,
     pub pkg_dir: Utf8PathBuf,
     pub pkg_url: Option<Utf8PathBuf>,
+    pub(crate) pkg_root: Option<Utf8PathBuf>,
     file_reg: RwLock<HashMap<String, u64>>,
     ext_file_reg: RwLock<HashMap<String, u64>>,
 }
@@ -89,6 +90,7 @@ impl fmt::Debug for Site {
             .field("root_dir", &self.root_dir)
             .field("pkg_dir", &self.pkg_dir)
             .field("pkg_url", &self.pkg_url)
+            .field("pkg_root", &self.pkg_root)
             .field("file_reg", &self.file_reg.blocking_read())
             .field("ext_file_reg", &self.ext_file_reg.blocking_read())
             .finish()
@@ -105,14 +107,35 @@ impl Site {
             root_dir: config.site_root.clone(),
             pkg_dir: config.site_pkg_dir.clone(),
             pkg_url: config.site_pkg_url.clone(),
+            pkg_root: config.site_pkg_root.clone(),
             file_reg: Default::default(),
             ext_file_reg: Default::default(),
         }
     }
 
     pub fn root_relative_pkg_dir(&self) -> Utf8PathBuf {
-        self.root_dir.join(&self.pkg_dir)
+        self.pkg_root
+            .clone()
+            .unwrap_or_else(|| self.root_dir.join(&self.pkg_dir))
     }
+
+    /// Returns the pkg dir relative to the site root if it is inside the site root.
+    pub(crate) fn pkg_dir_in_root(&self, workspace_root: &Utf8Path) -> Option<Utf8PathBuf> {
+        let Some(pkg_root) = &self.pkg_root else {
+            return Some(self.pkg_dir.clone());
+        };
+        let root = normalize(&workspace_root.join(&self.root_dir));
+        let pkg = normalize(&workspace_root.join(pkg_root));
+        pkg.strip_prefix(&root).ok().map(Utf8Path::to_path_buf)
+    }
+
+    /// Returns the configured pkg root if it is outside the site root.
+    pub(crate) fn pkg_root_outside(&self, workspace_root: &Utf8Path) -> Option<&Utf8Path> {
+        self.pkg_root
+            .as_deref()
+            .filter(|_| self.pkg_dir_in_root(workspace_root).is_none())
+    }
+
     /// check if the file changed
     pub async fn did_external_file_change(&self, to: &Utf8Path) -> Result<bool> {
         let new_hash = file_hash(to).await.dot()?;
@@ -185,4 +208,73 @@ impl Site {
 async fn file_hash(file: &Utf8Path) -> Result<u64> {
     let data = fs::read(&file).await?;
     Ok(seahash::hash(&data))
+}
+
+/// Removes `.` and resolves `..` without reading the disk.
+pub(crate) fn normalize(path: &Utf8Path) -> Utf8PathBuf {
+    let mut normalized = Utf8PathBuf::new();
+    for component in path.components() {
+        match component {
+            Utf8Component::CurDir => {}
+            Utf8Component::ParentDir
+                if matches!(
+                    normalized.components().next_back(),
+                    Some(Utf8Component::Normal(_))
+                ) =>
+            {
+                normalized.pop();
+            }
+            Utf8Component::ParentDir if normalized.has_root() => {}
+            component => normalized.push(component.as_str()),
+        }
+    }
+    normalized
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_the_pkg_dir_relative_to_the_site_root() {
+        let workspace = Utf8Path::new("/workspace");
+        let mut config: ProjectConfig = serde_json::from_str("{}").unwrap();
+        for (root, pkg, expected) in [
+            ("target/site", "target/site/pkg", Some("pkg")),
+            ("target/site", "target/site", Some("")),
+            ("target/site", "target/site-pkg", None),
+            (
+                "./target/site",
+                "./target/site/nested/pkg",
+                Some("nested/pkg"),
+            ),
+            ("target/tmp/../site", "target/site/sub/../pkg", Some("pkg")),
+            ("target/site", "target/site/../pkg", None),
+            ("/workspace/target/site", "target/site/pkg", Some("pkg")),
+            ("target/site", "/workspace/target/site/pkg", Some("pkg")),
+        ] {
+            config.site_root = root.into();
+            config.site_pkg_root = Some(pkg.into());
+            let site = Site::new(&config);
+            assert_eq!(
+                site.pkg_dir_in_root(workspace).as_deref(),
+                expected.map(Utf8Path::new),
+                "{root}, {pkg}",
+            );
+            assert_eq!(
+                site.pkg_root_outside(workspace),
+                expected.is_none().then_some(Utf8Path::new(pkg)),
+            );
+        }
+    }
+
+    #[test]
+    fn retains_the_legacy_pkg_dir_without_a_pkg_root() {
+        let mut config: ProjectConfig = serde_json::from_str("{}").unwrap();
+        config.site_pkg_dir = "/srv/pkg".into();
+        let site = Site::new(&config);
+        let workspace = Utf8Path::new("/workspace");
+        assert_eq!(site.pkg_dir_in_root(workspace), Some("/srv/pkg".into()));
+        assert_eq!(site.pkg_root_outside(workspace), None);
+    }
 }

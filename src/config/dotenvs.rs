@@ -40,6 +40,7 @@ fn overlay(conf: &mut ProjectConfig, envs: impl Iterator<Item = (String, String)
             "LEPTOS_SITE_ROOT" => conf.site_root = Utf8PathBuf::from(val),
             "LEPTOS_SITE_PKG_DIR" => conf.site_pkg_dir = Utf8PathBuf::from(val),
             "LEPTOS_SITE_PKG_URL" => conf.site_pkg_url = Some(Utf8PathBuf::from(val)),
+            "LEPTOS_SITE_PKG_ROOT" => conf.site_pkg_root = Some(Utf8PathBuf::from(val)),
             "LEPTOS_STYLE_FILE" => conf.style_file = Some(Utf8PathBuf::from(val)),
             "LEPTOS_STYLE_BUNDLE" => conf.style_bundle = val.parse()?,
             "LEPTOS_ASSETS_DIR" => conf.assets_dir = Some(Utf8PathBuf::from(val)),
@@ -79,4 +80,28 @@ fn overlay(conf: &mut ProjectConfig, envs: impl Iterator<Item = (String, String)
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlays_site_pkg_root_from_env() {
+        let mut config: ProjectConfig =
+            serde_json::from_str(r#"{"site-pkg-root":"target/metadata-pkg"}"#).unwrap();
+        assert_eq!(
+            config.site_pkg_root.as_deref(),
+            Some(Utf8Path::new("target/metadata-pkg"))
+        );
+
+        for path in ["target/dotenv-pkg", "target/env-pkg"] {
+            overlay(
+                &mut config,
+                std::iter::once(("LEPTOS_SITE_PKG_ROOT".into(), path.into())),
+            )
+            .unwrap();
+            assert_eq!(config.site_pkg_root.as_deref(), Some(Utf8Path::new(path)));
+        }
+    }
 }

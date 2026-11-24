@@ -7,6 +7,7 @@ use crate::{
     fs,
     internal_prelude::*,
     logger::GRAY,
+    service::site::Site,
     signal::{Outcome, Product},
 };
 use camino::{Utf8Path, Utf8PathBuf};
@@ -26,22 +27,21 @@ pub async fn assets(
         let Some(assets) = &proj.assets else {
             return Ok(Outcome::Success(Product::None));
         };
-        let dest_root = &proj.site.root_dir;
-        let pkg_dir = &proj.site.pkg_dir;
-
         // if reserved.contains(assets.dir) {
         //     warn!("Assets reserved filename for Leptos. Please remove {watched:?}");
         //     return Ok(false);
         // }
         trace!("Assets starting resync");
-        resync(&assets.dir, dest_root, pkg_dir).await?;
+        resync(&assets.dir, &proj.site, &proj.working_dir).await?;
         debug!("Assets finished");
         Ok(Outcome::Success(Product::Assets))
     })
 }
 
-pub fn reserved(src: &Utf8Path, pkg_dir: &Utf8Path) -> Vec<Utf8PathBuf> {
-    vec![src.join("index.html"), src.join(pkg_dir)]
+pub fn reserved(src: &Utf8Path, pkg_dir: Option<&Utf8Path>) -> Vec<Utf8PathBuf> {
+    let mut paths = vec![src.join("index.html")];
+    paths.extend(pkg_dir.map(|pkg_dir| src.join(pkg_dir)));
+    paths
 }
 
 // pub async fn update(config: &Config) -> Result<()> {
@@ -56,27 +56,36 @@ pub fn reserved(src: &Utf8Path, pkg_dir: &Utf8Path) -> Vec<Utf8PathBuf> {
 //     Ok(())
 // }
 
-async fn resync(src: &Utf8Path, dest: &Utf8Path, pkg_dir: &Utf8Path) -> Result<()> {
-    clean_dest(dest, pkg_dir)
-        .await
-        .wrap_err(format!("Cleaning {dest:?}"))?;
+async fn resync(src: &Utf8Path, site: &Site, workspace_root: &Utf8Path) -> Result<()> {
+    let dest = &site.root_dir;
+    let pkg_dir = site.pkg_dir_in_root(workspace_root);
+    let pkg_dir = pkg_dir.as_deref();
+    let pkg_is_site_root = site.pkg_root.is_some() && pkg_dir == Some(Utf8Path::new(""));
+    if !pkg_is_site_root {
+        clean_dest(dest, pkg_dir)
+            .await
+            .wrap_err(format!("Cleaning {dest:?}"))?;
+    }
     let reserved = reserved(src, pkg_dir);
     mirror(src, dest, &reserved)
         .await
         .wrap_err(format!("Mirroring {src:?} -> {dest:?}"))
 }
 
-async fn clean_dest(dest: &Utf8Path, pkg_dir: &Utf8Path) -> Result<()> {
+async fn clean_dest(dest: &Utf8Path, pkg_dir: Option<&Utf8Path>) -> Result<()> {
     if !dest.exists() {
         return Ok(());
     }
-    let pkg_dir = dest.join(pkg_dir);
+    let pkg_dir = pkg_dir.map(|pkg_dir| dest.join(pkg_dir));
     let mut entries = fs::read_dir(dest).await?;
     while let Some(entry) = entries.next_entry().await? {
         let path = entry.path();
 
         if entry.file_type().await?.is_dir() {
-            if !pkg_dir.starts_with(&path) {
+            if !pkg_dir
+                .as_ref()
+                .is_some_and(|pkg_dir| pkg_dir.starts_with(&path))
+            {
                 debug!(
                     "Assets removing folder {}",
                     GRAY.paint(path.to_string_lossy()),
@@ -136,4 +145,69 @@ async fn mirror(src_root: &Utf8Path, dest_root: &Utf8Path, reserved: &[Utf8PathB
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ProjectConfig;
+    use temp_dir::TempDir;
+
+    #[test]
+    fn reserves_the_pkg_dir_inside_the_site_root() {
+        let src = Utf8Path::new("assets");
+        assert_eq!(
+            reserved(src, Some(Utf8Path::new("static/pkg"))),
+            ["assets/index.html", "assets/static/pkg"]
+        );
+        assert_eq!(reserved(src, None), ["assets/index.html"]);
+        assert_eq!(
+            reserved(src, Some(Utf8Path::new(""))),
+            [src.join("index.html"), src.to_path_buf()]
+        );
+    }
+
+    #[tokio::test]
+    async fn cleans_dest_around_an_inside_or_outside_pkg_dir() {
+        for pkg_dir in [Some(Utf8Path::new("static/pkg")), None] {
+            let dir = TempDir::new().unwrap();
+            let dest = Utf8Path::from_path(dir.path()).unwrap();
+            std::fs::create_dir_all(dest.join("static/pkg")).unwrap();
+            std::fs::create_dir(dest.join("images")).unwrap();
+            for file in ["static/pkg/app.js", "index.html", "robots.txt"] {
+                std::fs::write(dest.join(file), "").unwrap();
+            }
+
+            clean_dest(dest, pkg_dir).await.unwrap();
+
+            assert_eq!(dest.join("static/pkg/app.js").exists(), pkg_dir.is_some());
+            assert!(dest.join("index.html").exists());
+            assert!(!dest.join("images").exists());
+            assert!(!dest.join("robots.txt").exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn protects_the_whole_dest_when_the_pkg_dir_is_the_site_root() {
+        let dir = TempDir::new().unwrap();
+        let workspace = Utf8Path::from_path(dir.path()).unwrap();
+        let mut config: ProjectConfig =
+            serde_json::from_str(r#"{"site-pkg-root":"./site"}"#).unwrap();
+        config.site_root = workspace.join("site");
+        std::fs::create_dir(&config.site_root).unwrap();
+        let output = config.site_root.join("app.js");
+        std::fs::write(&output, "").unwrap();
+        let src = workspace.join("assets");
+        std::fs::create_dir(&src).unwrap();
+
+        let error = resync(&src, &Site::new(&config), workspace)
+            .await
+            .unwrap_err();
+
+        assert!(error
+            .root_cause()
+            .to_string()
+            .contains("reserved for Leptos"));
+        assert!(output.exists());
+    }
 }

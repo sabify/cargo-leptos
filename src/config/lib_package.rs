@@ -144,19 +144,11 @@ impl LibPackage {
                 .join(profile.dir_name())
                 .join(target_lib.name.clone())
                 .with_extension("wasm");
-            let site = config
-                .site_pkg_dir
-                .join(&output_name)
-                .with_extension("wasm");
-            let dest = config.site_root.join(&site);
+            let SiteFile { dest, site } = config.pkg_file(&output_name, "wasm");
             SourcedSiteFile { source, dest, site }
         };
 
-        let js_file = {
-            let site = config.site_pkg_dir.join(&output_name).with_extension("js");
-            let dest = config.site_root.join(&site);
-            SiteFile { dest, site }
-        };
+        let js_file = config.pkg_file(&output_name, "js");
 
         let mut src_deps = metadata.src_path_dependencies(&package.id);
         if rel_dir == "." {

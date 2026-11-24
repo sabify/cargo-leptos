@@ -11,7 +11,7 @@ use crate::{
     config::{hash_file::HashFile, lib_package::LibPackage, UnixSignal},
     ext::{PathBufExt, PathExt},
     internal_prelude::*,
-    service::site::Site,
+    service::site::{normalize, Site, SiteFile},
 };
 use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata::{Metadata, Package};
@@ -244,9 +244,7 @@ impl Project {
             ("LEPTOS_JS_MINIFY", self.js_minify.to_string()),
             ("LEPTOS_HASH_FILES", self.hash_files.to_string()),
         ];
-        if let Some(pkg_url) = self.site.pkg_url.as_ref() {
-            vec.push(("LEPTOS_SITE_PKG_URL", pkg_url.to_string()));
-        }
+        vec.extend(optional_site_envs(&self.site));
         if self.hash_files {
             vec.push(("LEPTOS_HASH_FILE_NAME", self.hash_file.rel.to_string()));
         }
@@ -323,6 +321,8 @@ pub struct ProjectConfig {
     #[serde(default = "default_pkg_dir")]
     pub site_pkg_dir: Utf8PathBuf,
     pub site_pkg_url: Option<Utf8PathBuf>,
+    /// Directory for compiled output. Relative paths start at the workspace root.
+    pub site_pkg_root: Option<Utf8PathBuf>,
     pub style_file: Option<Utf8PathBuf>,
     /// whether to bundle CSS files using Lightning CSS
     #[serde(default)]
@@ -472,6 +472,18 @@ impl ProjectConfig {
         Ok(conf)
     }*/
 
+    pub(super) fn pkg_file(&self, output_name: &str, extension: &str) -> SiteFile {
+        let site = self
+            .site_pkg_dir
+            .join(output_name)
+            .with_extension(extension);
+        let dest = match &self.site_pkg_root {
+            Some(root) => root.join(output_name).with_extension(extension),
+            None => self.site_root.join(&site),
+        };
+        SiteFile { dest, site }
+    }
+
     fn parse_raw(&mut self, dir: &Utf8Path, cargo_metadata: &Metadata) -> Result<()> {
         self.config_dir = dir.to_path_buf();
         self.tmp_dir = cargo_metadata.target_directory.join("tmp");
@@ -511,6 +523,14 @@ impl ProjectConfig {
                 path
             };
         }
+        if let Some(pkg_root) = &self.site_pkg_root {
+            check_site_pkg_root(
+                pkg_root,
+                &self.site_root,
+                &cargo_metadata.workspace_root,
+                &cargo_metadata.target_directory,
+            )?;
+        }
         if self.site_addr.port() == self.reload_port {
             bail!(
                 "The site-addr port and reload-port cannot be the same: {}",
@@ -526,6 +546,44 @@ impl ProjectConfig {
 
         Ok(())
     }
+}
+
+fn check_site_pkg_root(
+    pkg_root: &Utf8Path,
+    site_root: &Utf8Path,
+    workspace_root: &Utf8Path,
+    target_dir: &Utf8Path,
+) -> Result<()> {
+    let pkg = normalize(&workspace_root.join(pkg_root));
+    let site = normalize(&workspace_root.join(site_root));
+    if pkg.starts_with(&site) {
+        return Ok(());
+    }
+    for (name, dir) in [
+        ("site-root", site),
+        ("the workspace root", normalize(workspace_root)),
+        (
+            "the Cargo target directory",
+            normalize(&workspace_root.join(target_dir)),
+        ),
+    ] {
+        if dir.starts_with(&pkg) {
+            bail!(
+                "site-pkg-root '{pkg_root}' cannot contain {name}. \
+                 All the content is erased when building the site."
+            );
+        }
+    }
+    Ok(())
+}
+
+fn optional_site_envs(site: &Site) -> impl Iterator<Item = (&'static str, String)> + '_ {
+    [
+        ("LEPTOS_SITE_PKG_URL", site.pkg_url.as_deref()),
+        ("LEPTOS_SITE_PKG_ROOT", site.pkg_root.as_deref()),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| value.map(|value| (name, value.to_string())))
 }
 
 #[derive(Deserialize, Debug)]
@@ -670,4 +728,82 @@ fn unused_metadata_warning(keys: Vec<&String>) {
         "Metadata keys {:?} from metadata.leptos are not recognized and will be ignored",
         keys
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compiled_output_uses_the_configured_pkg_root() {
+        let mut config: ProjectConfig = serde_json::from_str(
+            r#"{"output-name":"app","site-root":"target/site","style-file":"style.css"}"#,
+        )
+        .unwrap();
+        for (legacy, pkg_root, pkg_dir) in [
+            ("pkg", None, "target/site/pkg"),
+            ("custom", None, "target/site/custom"),
+            ("/srv/pkg", None, "/srv/pkg"),
+            ("pkg", Some("target/site/compiled"), "target/site/compiled"),
+            ("custom", Some("target/compiled"), "target/compiled"),
+        ] {
+            config.site_pkg_dir = legacy.into();
+            config.site_pkg_root = pkg_root.map(Into::into);
+            let site = Site::new(&config);
+            assert_eq!(site.root_relative_pkg_dir(), pkg_dir);
+            for extension in ["wasm", "js"] {
+                let file = config.pkg_file(&config.output_name, extension);
+                assert_eq!(file.dest, format!("{pkg_dir}/app.{extension}"));
+                assert_eq!(file.site, format!("{legacy}/app.{extension}"));
+            }
+            let style = StyleConfig::new(&config).unwrap();
+            assert_eq!(style.site_file.dest, format!("{pkg_dir}/app.css"));
+            assert_eq!(style.file.unwrap().dest, style.site_file.dest);
+        }
+    }
+
+    #[test]
+    fn pkg_root_cannot_contain_a_protected_directory() {
+        let workspace = Utf8Path::new("/home/workspace");
+        let target = Utf8Path::new("/cache/target");
+        for (root, pkg, error) in [
+            ("out/site", "out/site/pkg", None),
+            ("out/site", "out/site", None),
+            ("out/site", "out/pkg", None),
+            ("out/site", "out/site/pkg/../..", Some("site-root")),
+            ("/srv/site", ".", Some("the workspace root")),
+            ("/srv/site", "..", Some("the workspace root")),
+            (
+                "/srv/site",
+                "/cache/target",
+                Some("the Cargo target directory"),
+            ),
+            ("/srv/site", "/cache", Some("the Cargo target directory")),
+            ("/srv/site", "/cache/target/pkg", None),
+        ] {
+            let result =
+                check_site_pkg_root(Utf8Path::new(pkg), Utf8Path::new(root), workspace, target);
+            if let Some(name) = error {
+                let message = result.unwrap_err().to_string();
+                assert!(
+                    message.contains(&format!("cannot contain {name}")),
+                    "{message}"
+                );
+            } else {
+                assert!(result.is_ok(), "{root}, {pkg}: {result:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn passes_pkg_root_to_the_app_only_when_set() {
+        let mut config: ProjectConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(optional_site_envs(&Site::new(&config)).next(), None);
+        config.site_pkg_root = Some("./target/compiled".into());
+        let site = Site::new(&config);
+        assert_eq!(
+            optional_site_envs(&site).collect::<Vec<_>>(),
+            [("LEPTOS_SITE_PKG_ROOT", "./target/compiled".to_owned())]
+        );
+    }
 }

@@ -48,6 +48,9 @@ async fn build_frontend(proj: &Arc<Project>, changes: &ChangeSet) -> Result<bool
     // server to make it possible to include them as assets into the binary itself
     if proj.release && proj.precompress {
         compress::compress_static_files(proj.site.root_dir.clone().into()).await?;
+        if let Some(pkg_root) = proj.site.pkg_root_outside(&proj.working_dir) {
+            compress::compress_static_files(pkg_root.as_std_path().to_path_buf()).await?;
+        }
     }
 
     Ok(true)
@@ -59,6 +62,12 @@ pub async fn build_proj(proj: &Arc<Project>) -> Result<bool> {
     let needs_frontend = !proj.server_only;
     let needs_server = !proj.frontend_only;
 
+    // A separate pkg root can hold hashed output from the previous build.
+    if needs_frontend {
+        if let Some(pkg_root) = proj.site.pkg_root_outside(&proj.working_dir) {
+            fs::rm_dir_content(pkg_root).await.dot()?;
+        }
+    }
     if !proj.site.root_dir.exists() {
         fs::create_dir_all(&proj.site.root_dir).await.dot()?;
     } else if needs_frontend {

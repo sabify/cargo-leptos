@@ -276,7 +276,7 @@ any parent directory.
 # Optional, defaults to the lib package name or, in a workspace, the project name. Env: LEPTOS_OUTPUT_NAME.
 output-name = "myproj"
 
-# The site root folder is where cargo-leptos generate all output.
+# The folder for static site files and, by default, compiled output.
 # NOTE: It is relative to the workspace root when running in a workspace.
 # WARNING: all content of this folder will be erased on a rebuild!
 #
@@ -287,6 +287,14 @@ site-root = "target/site"
 #
 # Optional, defaults to "pkg". Env: LEPTOS_SITE_PKG_DIR.
 site-pkg-dir = "pkg"
+
+# The folder for all compiled output, including JS, WASM, CSS, and split or hashed files.
+# Relative paths start at the workspace root. This folder can be inside or outside site-root.
+# All its content is erased on a frontend rebuild when the folder is outside site-root.
+# Requires Leptos 0.9 or newer.
+#
+# Optional, defaults to site-pkg-dir under site-root. Set with LEPTOS_SITE_PKG_ROOT.
+site-pkg-root = "target/site/pkg"
 
 # The URL path under which the compiled output (JS, WASM and CSS) is served, if it differs
 # from site-pkg-dir. Useful with an absolute site-pkg-dir, so its server path is not exposed.
@@ -323,7 +331,7 @@ tailwind-config-file = "tailwind.config.js"
 browserquery = "defaults"
 
 # Assets source dir. All files found here will be copied and synchronized to site-root.
-# The assets-dir cannot have a sub directory with the same name/path as site-pkg-dir.
+# When the compiled output is inside site-root, its path is reserved in assets-dir.
 #
 # Optional. Env: LEPTOS_ASSETS_DIR.
 assets-dir = "assets"
@@ -458,6 +466,7 @@ Echoed from the Leptos config:
 - LEPTOS_SITE_ROOT
 - LEPTOS_SITE_PKG_DIR
 - LEPTOS_SITE_PKG_URL: Only when `site-pkg-url` is set
+- LEPTOS_SITE_PKG_ROOT (only when `site-pkg-root` is set)
 - LEPTOS_SITE_ADDR
 - LEPTOS_RELOAD_PORT
 
@@ -491,6 +500,7 @@ passthrough = [
     "LEPTOS_SITE_ROOT",
     "LEPTOS_SITE_PKG_DIR",
     "LEPTOS_SITE_PKG_URL",
+    "LEPTOS_SITE_PKG_ROOT",
     "LEPTOS_SITE_ADDR",
     "LEPTOS_RELOAD_PORT",
     "LEPTOS_LIB_DIR",
