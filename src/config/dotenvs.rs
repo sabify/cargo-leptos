@@ -38,6 +38,7 @@ fn overlay(conf: &mut ProjectConfig, envs: impl Iterator<Item = (String, String)
         match key.as_str() {
             "LEPTOS_OUTPUT_NAME" => conf.output_name = val,
             "LEPTOS_SITE_ROOT" => conf.site_root = Utf8PathBuf::from(val),
+            "LEPTOS_SITE_ROOT_URL" => conf.site_root_url = Some(val),
             "LEPTOS_SITE_PKG_DIR" => conf.site_pkg_dir = Utf8PathBuf::from(val),
             "LEPTOS_SITE_PKG_URL" => conf.site_pkg_url = Some(Utf8PathBuf::from(val)),
             "LEPTOS_SITE_PKG_ROOT" => conf.site_pkg_root = Some(Utf8PathBuf::from(val)),
@@ -87,21 +88,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn overlays_site_pkg_root_from_env() {
+    fn overlays_site_mounts_from_env() {
         let mut config: ProjectConfig =
-            serde_json::from_str(r#"{"site-pkg-root":"target/metadata-pkg"}"#).unwrap();
+            serde_json::from_str(r#"{"site-pkg-root":"meta/pkg","site-root-url":"/meta"}"#)
+                .unwrap();
         assert_eq!(
             config.site_pkg_root.as_deref(),
-            Some(Utf8Path::new("target/metadata-pkg"))
+            Some(Utf8Path::new("meta/pkg"))
         );
+        assert_eq!(config.site_root_url.as_deref(), Some("/meta"));
 
-        for path in ["target/dotenv-pkg", "target/env-pkg"] {
+        for (path, url) in [("target/dotenv-pkg", "/dotenv"), ("target/env-pkg", "/env")] {
+            let vars = [
+                ("LEPTOS_SITE_PKG_ROOT", path),
+                ("LEPTOS_SITE_ROOT_URL", url),
+            ];
             overlay(
                 &mut config,
-                std::iter::once(("LEPTOS_SITE_PKG_ROOT".into(), path.into())),
+                vars.into_iter()
+                    .map(|(name, value)| (name.into(), value.into())),
             )
             .unwrap();
             assert_eq!(config.site_pkg_root.as_deref(), Some(Utf8Path::new(path)));
+            assert_eq!(config.site_root_url.as_deref(), Some(url));
         }
     }
 }

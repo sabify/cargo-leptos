@@ -318,6 +318,8 @@ pub struct ProjectConfig {
     pub site_addr: SocketAddr,
     #[serde(default = "default_site_root")]
     pub site_root: Utf8PathBuf,
+    /// URL path that serves the site root.
+    pub site_root_url: Option<String>,
     #[serde(default = "default_pkg_dir")]
     pub site_pkg_dir: Utf8PathBuf,
     pub site_pkg_url: Option<Utf8PathBuf>,
@@ -578,12 +580,15 @@ fn check_site_pkg_root(
 }
 
 fn optional_site_envs(site: &Site) -> impl Iterator<Item = (&'static str, String)> + '_ {
+    let pkg_url = site.pkg_url.as_deref().map(Utf8Path::as_str);
+    let pkg_root = site.pkg_root.as_deref().map(Utf8Path::as_str);
     [
-        ("LEPTOS_SITE_PKG_URL", site.pkg_url.as_deref()),
-        ("LEPTOS_SITE_PKG_ROOT", site.pkg_root.as_deref()),
+        ("LEPTOS_SITE_PKG_URL", pkg_url),
+        ("LEPTOS_SITE_PKG_ROOT", pkg_root),
+        ("LEPTOS_SITE_ROOT_URL", site.root_url.as_deref()),
     ]
     .into_iter()
-    .filter_map(|(name, value)| value.map(|value| (name, value.to_string())))
+    .filter_map(|(name, value)| value.map(|value| (name, value.to_owned())))
 }
 
 #[derive(Deserialize, Debug)]
@@ -804,6 +809,16 @@ mod tests {
         assert_eq!(
             optional_site_envs(&site).collect::<Vec<_>>(),
             [("LEPTOS_SITE_PKG_ROOT", "./target/compiled".to_owned())]
+        );
+    }
+
+    #[test]
+    fn passes_root_url_to_the_app_only_when_set() {
+        let config = serde_json::from_str(r#"{"site-root-url":"/static/"}"#).unwrap();
+        let site = Site::new(&config);
+        assert_eq!(
+            optional_site_envs(&site).collect::<Vec<_>>(),
+            [("LEPTOS_SITE_ROOT_URL", "/static/".to_owned())]
         );
     }
 }

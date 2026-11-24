@@ -75,6 +75,7 @@ pub struct Site {
     pub addr: SocketAddr,
     pub reload: SocketAddr,
     pub root_dir: Utf8PathBuf,
+    pub(crate) root_url: Option<String>,
     pub pkg_dir: Utf8PathBuf,
     pub pkg_url: Option<Utf8PathBuf>,
     pub(crate) pkg_root: Option<Utf8PathBuf>,
@@ -88,6 +89,7 @@ impl fmt::Debug for Site {
             .field("addr", &self.addr)
             .field("reload", &self.reload)
             .field("root_dir", &self.root_dir)
+            .field("root_url", &self.root_url)
             .field("pkg_dir", &self.pkg_dir)
             .field("pkg_url", &self.pkg_url)
             .field("pkg_root", &self.pkg_root)
@@ -105,6 +107,7 @@ impl Site {
             addr: config.site_addr,
             reload,
             root_dir: config.site_root.clone(),
+            root_url: config.site_root_url.clone(),
             pkg_dir: config.site_pkg_dir.clone(),
             pkg_url: config.site_pkg_url.clone(),
             pkg_root: config.site_pkg_root.clone(),

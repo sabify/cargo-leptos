@@ -33,7 +33,11 @@ pub async fn spawn(proj: &Arc<Project>) -> JoinHandle<()> {
     *site_addr = proj.site.addr;
     if let Some(file) = &proj.style.file {
         let mut css_link = CSS_LINK.write().await;
-        *css_link = css_link_path(&file.site, proj.site.pkg_url.as_deref());
+        *css_link = css_link_path(
+            &file.site,
+            proj.site.pkg_url.as_deref(),
+            proj.site.root_url.as_deref(),
+        );
     }
 
     tokio::spawn(async move {
@@ -79,8 +83,12 @@ pub async fn spawn(proj: &Arc<Project>) -> JoinHandle<()> {
     })
 }
 
-/// The browser looks the stylesheet up by its URL, which is under `site-pkg-url` when set
-fn css_link_path(site: &Utf8Path, pkg_url: Option<&Utf8Path>) -> String {
+/// Returns the stylesheet URL path without its leading slash.
+fn css_link_path(site: &Utf8Path, pkg_url: Option<&Utf8Path>, root_url: Option<&str>) -> String {
+    let root = root_url
+        .filter(|_| pkg_url.is_none())
+        .map(|url| url.trim_matches('/'))
+        .filter(|url| !url.is_empty());
     let site = match pkg_url {
         Some(url) => {
             Utf8Path::new(url.as_str().trim_matches('/')).join(site.file_name().unwrap_or_default())
@@ -89,11 +97,11 @@ fn css_link_path(site: &Utf8Path, pkg_url: Option<&Utf8Path>) -> String {
     };
     // Always use `/` as separator in links, and drop the root of an absolute
     // site-pkg-dir as leptos does
-    site.components()
+    let parts = site
+        .components()
         .filter(|c| !matches!(c, Utf8Component::Prefix(_) | Utf8Component::RootDir))
-        .map(|c| c.as_str())
-        .collect::<Vec<_>>()
-        .join("/")
+        .map(|c| c.as_str());
+    root.into_iter().chain(parts).collect::<Vec<_>>().join("/")
 }
 
 async fn websocket_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
@@ -209,12 +217,12 @@ mod tests {
     #[test]
     fn css_link_path_defaults_to_site_pkg_dir() {
         assert_eq!(
-            css_link_path(Utf8Path::new("pkg/app.css"), None),
+            css_link_path(Utf8Path::new("pkg/app.css"), None, None),
             "pkg/app.css"
         );
         // leptos trims the leading `/` of an absolute site-pkg-dir in the url
         assert_eq!(
-            css_link_path(Utf8Path::new("/srv/site/pkg/app.css"), None),
+            css_link_path(Utf8Path::new("/srv/site/pkg/app.css"), None, None),
             "srv/site/pkg/app.css"
         );
     }
@@ -223,20 +231,38 @@ mod tests {
     fn css_link_path_uses_site_pkg_url() {
         let site = Utf8Path::new("pkg/app.css");
         assert_eq!(
-            css_link_path(site, Some(Utf8Path::new("assets"))),
+            css_link_path(site, Some(Utf8Path::new("assets")), None),
             "assets/app.css"
         );
         assert_eq!(
-            css_link_path(site, Some(Utf8Path::new("/static/assets/"))),
+            css_link_path(site, Some(Utf8Path::new("/static/assets/")), None),
             "static/assets/app.css"
         );
         // an absolute site-pkg-dir is never exposed
         assert_eq!(
             css_link_path(
                 Utf8Path::new("/srv/site/pkg/app.css"),
-                Some(Utf8Path::new("pkg"))
+                Some(Utf8Path::new("pkg")),
+                None,
             ),
             "pkg/app.css"
         );
+    }
+
+    #[test]
+    fn css_link_path_uses_site_root_url_for_the_default_pkg_url() {
+        let site = Utf8Path::new("pkg/app.css");
+        for (root_url, pkg_url, link) in [
+            ("/static", None, "static/pkg/app.css"),
+            ("/static/", None, "static/pkg/app.css"),
+            ("/", None, "pkg/app.css"),
+            ("/static", Some("/assets/"), "assets/app.css"),
+            ("/static", Some("/"), "app.css"),
+        ] {
+            assert_eq!(
+                css_link_path(site, pkg_url.map(Utf8Path::new), Some(root_url)),
+                link
+            );
+        }
     }
 }

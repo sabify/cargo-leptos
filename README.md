@@ -283,6 +283,11 @@ output-name = "myproj"
 # Optional, defaults to "/site" in the Cargo target directory. Env: LEPTOS_SITE_ROOT.
 site-root = "target/site"
 
+# The URL path that serves site-root. Requires Leptos 0.9 or newer.
+#
+# Optional, defaults to "/". Set with LEPTOS_SITE_ROOT_URL.
+site-root-url = "/"
+
 # The site-root relative folder where all compiled output (JS, WASM and CSS) is written.
 #
 # Optional, defaults to "pkg". Env: LEPTOS_SITE_PKG_DIR.
@@ -296,10 +301,9 @@ site-pkg-dir = "pkg"
 # Optional, defaults to site-pkg-dir under site-root. Set with LEPTOS_SITE_PKG_ROOT.
 site-pkg-root = "target/site/pkg"
 
-# The URL path under which the compiled output (JS, WASM and CSS) is served, if it differs
-# from site-pkg-dir. Useful with an absolute site-pkg-dir, so its server path is not exposed.
+# The URL path that serves compiled output.
 #
-# Optional, defaults to site-pkg-dir. Env: LEPTOS_SITE_PKG_URL.
+# Optional, defaults to site-pkg-dir under site-root-url. Set with LEPTOS_SITE_PKG_URL.
 site-pkg-url = "pkg"
 
 # The source style file. If it ends with _.sass_ or _.scss_ then it will be compiled by `dart-sass`
@@ -464,6 +468,7 @@ Echoed from the Leptos config:
 
 - LEPTOS_OUTPUT_NAME
 - LEPTOS_SITE_ROOT
+- LEPTOS_SITE_ROOT_URL (only when `site-root-url` is set)
 - LEPTOS_SITE_PKG_DIR
 - LEPTOS_SITE_PKG_URL: Only when `site-pkg-url` is set
 - LEPTOS_SITE_PKG_ROOT (only when `site-pkg-root` is set)
@@ -498,6 +503,7 @@ For `cross` specifically, you need to add this section to the `Cross.toml` file:
 passthrough = [
     "LEPTOS_OUTPUT_NAME",
     "LEPTOS_SITE_ROOT",
+    "LEPTOS_SITE_ROOT_URL",
     "LEPTOS_SITE_PKG_DIR",
     "LEPTOS_SITE_PKG_URL",
     "LEPTOS_SITE_PKG_ROOT",
